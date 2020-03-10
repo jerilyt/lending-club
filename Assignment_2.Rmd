@@ -1,0 +1,392 @@
+---
+title: "Assignment 2"
+author: "Yantong Li"
+date: "2020/2/25"
+output: html_document
+---
+
+## Simple Linear Regression 
+1. Download the file lendingclub.csv from our class Blackboard site. Bring this file into your R environment with the read.csv() function. Show the step(s) that you used to bring this file into your R environment.
+In this section, we will explore the relationship between a person’s revolving credit utilizationrate(revol_util) and the interest rate that he or she pays on a loan generated through the Lending Club platform.
+```{r}
+library(mice)
+library(ggplot2)
+library(GGally)
+library(dplyr)
+library(forecast)
+library(visualize) # for data cleaning
+library(rockchalk) # for combining levels
+```
+
+```{r}
+lendingclub <- read.csv("lendingclub.csv")
+```
+
+
+
+2. There might be some issues with this dataset. For instance, no one can have a revolving credit utilization percentage greater than 100%. For any values above 100, assume that they are entered mistakenly. Delete these rows from your dataset.
+
+
+
+#### Delete wrong value of *revol_util*
+```{r}
+lendingclub <- lendingclub[lendingclub$revol_util <= 100,]
+summary(lendingclub)
+```
+
+
+
+After I check the dataframe, I found many variables exist 1552 NAs. Therefore, I need to check the distribution of the missing values in the dataset. To be simplified, I only check the categorical variables -- *term*, *emp_length*, *home_ownership*, *verification_status*, *purpose* 
+
+
+#### Handle with 1552 rows with all NA value
+```{r}
+for (i in c(5,8,9,11,12)){
+  sum_na = sum(is.na(lendingclub[,i]))
+  print(sum_na)
+}
+na_df <- lendingclub[is.na(lendingclub$term)==TRUE,]
+md.pattern(na_df) 
+
+```
+
+md.pattern() displays the missing-data patterns. This is from mice package, which is very useful for data cleaning.
+This result shows that the values of these rows are missing non-randomly. So we just delete the 1552 rows from our dataset.
+```{r}
+lendingclub_2 <- lendingclub[is.na(lendingclub$term)==FALSE,]
+summary(lendingclub_2)
+```
+There is only three variables *inq_last_6mths*, *mths_since_last_delinq*, *mths_since_last_record* existing missing values. 
+
+
+#### Handling the missing value of *inq_last_6mths*
+As for the *inq_last_6mths*, I fill NA value as the mode value of its similar pattern.
+```{r}
+na_df_2 <- lendingclub_2[is.na(lendingclub_2$inq_last_6mths )==TRUE,]
+na_similar <- lendingclub_2[(lendingclub_2$term ==na_df_2$term & lendingclub_2$home_ownership == na_df_2$home_ownership &  lendingclub_2$purpose == na_df_2$purpose & lendingclub_2$verification_status == na_df_2$verification_status & lendingclub_2$emp_length == na_df_2$emp_length),]
+table(na_similar$inq_last_6mths) # mode value is 22285, so I impute the missing value as 0.
+lendingclub_2[is.na(lendingclub_2$inq_last_6mths )==TRUE,]$inq_last_6mths = 0
+```
+
+
+#### Handle with the missing values of *mths_since_last_delinq* and *mths_since_last_record*: One Hot Encoding
+There is more than 50% missing value in *mths_since_last_delinq*, and 80%+ in *mths_since_last_record*. I think it happens may because borrowers perform good, and make loan payments on time. I am not sure whether the value can be filled as "0" or not. Therefore, to remain all the information of these two varibles, I keep NA and transform the numeric varibles into categorical. 
+
+But it doesn't work if I just make these two variables one hot encoding. There would generate more than 100 dimensions for each variables.(For example, *mths_since_last_record* can be "NoRecord", "0", "1"...) I have tries in this way. However, because of the larger dataset, automatic backward eliminating process was running so slowly, and even stop because reaching RAM limit. The solutions in the website do not help... 
+Therefore, I made a new variable to judge the borrower has delinquency/public record or not. This can reduce the dimensions of data frame.
+
+**Feature Engneering**
+*delinq*: all the "NoRecord" and "0" in *mths_since_last_delinq*  into "N", and other values change to "Y"
+*record*:all the "NoRecord" and "0" in *mths_since_last_record*  into "N", and other values change to "Y" 
+
+
+```{r}
+lendingclub_2$mths_since_last_delinq[is.na(lendingclub_2$mths_since_last_delinq)] <- "NoRecord"
+lendingclub_2$mths_since_last_record[is.na(lendingclub_2$mths_since_last_record)] <- "NoRecord"
+lendingclub_2$mths_since_last_delinq <- as.factor(lendingclub_2$mths_since_last_delinq)
+lendingclub_2$mths_since_last_record <- as.factor(lendingclub_2$mths_since_last_record)
+
+lendingclub_3 <- lendingclub_2
+lendingclub_3$delinq <- lendingclub_3$mths_since_last_delinq
+lendingclub_3$delinq <- as.character(lendingclub_3$delinq)
+lendingclub_3$delinq[which((lendingclub_3$mths_since_last_delinq == "NoRecord")|
+                             (lendingclub_3$mths_since_last_delinq == "0" ))] <- "N"
+lendingclub_3$delinq[which((lendingclub_3$mths_since_last_delinq != "NoRecord") &
+                             (lendingclub_3$mths_since_last_delinq != "0" ))] <- "Y"
+lendingclub_3$delinq = as.factor(lendingclub_3$delinq)
+
+
+lendingclub_3$record <- lendingclub_3$mths_since_last_record
+lendingclub_3$record <- as.character(lendingclub_3$record)
+lendingclub_3$record[which((lendingclub_3$mths_since_last_record == "NoRecord")|
+                             (lendingclub_3$mths_since_last_record == "0" ))] = "N"
+lendingclub_3$record[which((lendingclub_3$mths_since_last_record != "NoRecord") &
+                             (lendingclub_3$mths_since_last_record != "0" ))] <- "Y"
+lendingclub_3$record = as.factor(lendingclub_3$record)
+
+```
+
+
+
+
+
+3. Let’s explore the relationship between these variables in a visual way. Using ggplot, create a hexagonal bin plot that depicts the borrower’s interest rate (the int_rate variable) on the y-axis and the revol_util variable on the x-axis. Add a best-fit line to this hexagonal bin plot. Try adjusting the number of bins and the color gradient to improve readability. Show the code that you used to build your plot, and show the plot.
+What does this plot suggest about the relationship between these variables? Does this make intuitive sense to you? Why or why not?
+```{r}
+p = ggplot(lendingclub_2, aes(revol_util,int_rate)) + 
+  stat_binhex(colour="gray97",na.rm=TRUE) +
+  scale_fill_gradientn(colours=c("gray97","dodgerblue"),name = "Frequency",na.value=NA) +
+  geom_smooth(method='lm',na.rm = TRUE)
+plot(p)
+```
+This plot shows the positive relationship between revol_util and int_rate. It does make sense. If borrower tends to reach his/her credit limit, this might reveal that there might be high credit risk. High risk, high return. Interest rate is one part of return.
+
+
+
+4. Now, find the correlation between these variables. Show the code you used to find this, along with your results.
+```{r}
+ggcorr(lendingclub_2[, c(2:4,6:7,10,13:22)], label = TRUE, label_size = 3, label_round = 2, label_alpha = TRUE)
+```
+
+
+5. Using your assigned seed value, create a data partition. Assign approximately 60% of The records to your training set, and the other 40% to your validation set. Show the code that you used to do this.
+```{r}
+
+set.seed(220)
+
+newlendingclub <- sample_n(lendingclub_3, n())
+
+bp <- nrow(newlendingclub)*0.6
+train_data <- slice(newlendingclub,1:bp)
+valid_data <- slice(newlendingclub,(bp+1):nrow(newlendingclub))
+```
+
+
+6. Using your training set, create a simple linear regression model, with int_rate as your outcome variable and revol_util as your input variable. Show the step(s) that you used to do this. Include a screen shot of the summary of your model,along with the code you used to generate that summary.
+```{r}
+lmfit <- lm(int_rate~revol_util,data = train_data)
+summary(lmfit)
+```
+
+
+
+7. If your r-squared value seems low, do not assume that you did something wrong, or that there is something wrong with the assignment. Instead, think about what r-squared means. Why might more variables lead to a higher r-squared?
+
+R-squared measures how close the data are to the fitted regression line. The R-squared value in this simple linear model seems pretty low but still have statistically significant predictor with significant level less than 0.1%. Therefore, *revol_util* is an important independent variable to *int_rate*.
+SSE is one components of R-squared, representing the explained error. When new variable added into the model, the model would be more explainable, therefore the explained error will decrease. According to formula of R-squared, SSE decreases will lead to the increment of R-squared.
+In multiple linear regression, we should use Adjusted R-squared which has punishment on the number of variable.
+
+
+
+8. What is the regression equation generated by your model? Make up a hypothetical input value and explain what it would predict as an outcome. To show the predicted outcome value, you can either use a function in R, or just explain what the predicted outcome would be, based on the regression equation and some simple math.
+```{r}
+lmfit
+predict(lmfit,data.frame(revol_util = 70))
+```
+The regression equation is int_rate = 0.05067 * revol_util + 10.49541
+When revolving line utilization rate is 70% (revol_util = 70), the predicted outcome will be 14.04264 When one percent unit of revolving line utilization rate increase, the interest rate will increase by 0.05067 With the interest rate baseline 10.49541, the predicted outcome will be 0.05067 * 70 + 10.49541 = 14.04264
+
+
+
+
+
+9. Using the accuracy() function from the forecast package, assess the accuracy of your model against both the training set and the validation set. What do you notice about these results? Describe your findings in a couple of sentences.
+```{r}
+pred_train <- predict(lmfit, train_data)
+accuracy(pred_train,train_data$int_rate)
+```
+
+```{r}
+pred_valid <- predict(lmfit, valid_data)
+accuracy(pred_valid,valid_data$int_rate)
+```
+
+```{r}
+summary(train_data$int_rate)
+```
+
+The Error in training dataset might be lower because this linear regression model is fitted on this dataset. But both results of the predictive effects on two datasets are similar, with around 4.63 units RMSE. 
+This might be a higher error toward the interest rate. The mean value of interest rate in training dataset is 13.05, so 4.63 RMSE and 3.62 MAE seem to be significant error ranges. 
+
+
+
+
+
+## Multiple Linear Regression:
+For this part of the assignment, use the same training set and the same validation set that you used
+in Part I.
+
+
+1. Build a correlation table in R that depicts the correlations among all of the numerical variables that you might use as predictors (use your training set to build this). Show the code you used to build this, and show the results. Are there any variable relationships that suggest that multicollinearity could be an issue here? If so, for any strongly correlated variable pair, remove any variables that should be taken out of the model. How did you decide which ones to remove?
+
+Here is the correlation table depicting all the correlations all the numerical variables.
+```{r}
+type_df <- sapply(train_data,class)
+type_df[type_df == "integer"|type_df == "numeric"]
+cor_table <- cor(train_data[,c(2:4,6:7,10,13:15,18:22)])
+```
+To display more visualized, I made correlation heatmap.
+```{r}
+ggcorr(train_data[, c(2:4,6:7,10,13:15,18:22)], label = TRUE, label_size = 2.5, label_round = 2, label_alpha = TRUE)
+```
+According to this diagram, there are 7 pairs of variables with high correlation(larger than 0.7)
+*loan_amnt* & *funded_amnt*, *loan_amnt* & *funded_amnt_inv*, *loan_amnt* & *installment*,
+*funded_amnt* & *funded_amnt_inv*, *funded_amnt* & *installment*, 
+*funded_amnt_inv* & *installment*,
+*open_acc* &*total_acc.*
+To highlight these correlations, I redraw a new heatmap.
+```{r}
+type_df
+ggcorr(train_data[, c(2:4,7,18,22)], label = TRUE, label_size = 2.5, label_round = 2, label_alpha = TRUE)
+cor_table[,c(1:3,5,10,14)]
+```
+To avoid multicollinearity, to decide to remove the following varibles: *loan_amnt*, *funded_amnt*, *funded_amnt_inv*,*open_acc*.
+
+* *loan_amnt*, *funded_amnt*, *funded_amnt_inv*: after I check the values of *loan_amnt*, *funded_amnt* and *funded_amnt_inv*, I found there are almost same. This is the reason why the correlations with other variables are similar. So I select *loan_amnt* randomlg to compare it with *installment*.
+* *installment* seems to be more correlated with *int_rate* than *loan_amnt* does, so finally I remove these three varibles and keep *installment* to make sure almost complete information. 
+* *open_acc*: since *total_acc* seems to be more correlated with *int_rate* than *open_acc* does, I keep *total_acc* and remove *open_acc*
+
+
+
+2. What are dummy variables? In a couple of sentences, describe what they are and explain their purpose. (We won’t create dummy variables here, because they’ll be automatically generated in R when we call the lm() function).
+
+Dummy variable is often used to distinguish different treatment groups which only taking 0 or 1 as its value. 
+Linear regression model is built based on minimizing OLS, which required all the values should be numeric. For categorical variables, generating dummy variables make the value into numeric ones without any order or any sense. 
+The coefficient of variable represents the influence on dependent value when this categorical factor equals to specific value. If all the values of its dummy vairables equal to 0, then the coefficient is the effect of the last value.
+
+In this model,  I decided to remove *mths_since_last_delinq* and  *mths_since_last_record* from my dataset. (The explaination is in the **Feature Engneering** part) 
+*term*, *emp_length*, *home_ownership*, *verification_status*, *purpose*,*delinq*, *record* has been transformed into dummy variables automatically. 
+```{r}
+# type_df <- sapply(train_data,class)   # type_df is already definded in question 1.
+type_df[type_df == "factor"]  
+```
+
+
+3. Using backward elimination, build a multiple regression model with the data in your training set, with the goal of predicting the int_rate variable. (Start with all of the potential predictors).
+
+**Step 1**: there is all missing value in member_id, so I remove it from my dataset. And also removing the variables which are highly correlated with other independent variables. I named it as *train_data_2* .
+```{r}
+train_data_2 <- select(train_data,-member_id,-loan_amnt, -funded_amnt, -funded_amnt_inv,-open_acc,-mths_since_last_delinq,-mths_since_last_record)
+```
+**Step 2**: Variable selection and model building
+```{r}
+# Fit full model
+lendfit <- lm(int_rate~. ,data = train_data_2)
+summary(lendfit)
+# Backward regression model
+lendfitback <- step(lendfit,direction = "backward")   
+```
+
+When we reach the minimized AIC for multiple linear regression model, *step()* function eliminates *pub_rec* automatically.
+
+
+
+
+4. Based in part on what was recommended by the backward elimination process, and in part on your judgement, which variables will you keep? (Note: This is not a trick question. Part of making a multiple linear regression model involves subjective judgement). For categorical variables whose levels have differing significance levels, you may wish to just include all levels, to include no levels, or to get creative by combining some levels into a new feature. No R code is required for this step, but if you take the creative option, you should show your process.
+
+
+
+**Step 1** 
+Based on the backward elimination process, only *pub_rec* has been eliminated. I think *home_ownership* seems not very significant in some categories.
+
+The following analysis shows why I still kept *emp_length* and only eliminate *pub_rec* for the multiple linear regression.
+
+
+```{r}
+summary(lendfitback)
+```
+
+
+According to the significant analysis, there is a few dummy variables of *home_ownership* show statistically significant.
+
+Only longer employed length would lead more significant. Therefore, I decides to regroup home_ownership into two levels, "MORTGAGE", "NotMORTGAGE"
+```{r}
+train_data_3 <- train_data_2   # back up...
+levels(train_data_3$home_ownership)
+
+train_data_3$home_ownership <- combineLevels(train_data_3$home_ownership,levs = c("ANY","NONE","OTHER","OWN", "RENT"), newLabel = "NotMORTGAGE")
+
+levels(train_data_3$home_ownership)
+
+```
+
+```{r}
+
+# Fit full model
+lendfit_2 <- lm(int_rate~. ,data = train_data_3)
+summary(lendfit_2)
+# Backward regression model
+lendfitback_2 <- step(lendfit_2,direction = "backward")
+```
+
+```{r}
+summary(lendfitback_2)
+```
+
+
+So build another model based on **lendfitback** model but combine the levels of *home_ownership*.
+
+Therefore, I choose **lendfitback_2**. That is to keep term, installment,emp_length,home_ownership, annual_inc, verification_status, purpose, dti, delinq_2yrs, inq_last_6mths, revol_bal, revol_util, total_acc, delinq, and record.
+
+
+5. Using the variables that you will keep, build a multiple linear regression model. Show the code you used to build it, and show a summary of your multiple regression model.
+```{r}
+summary(lendfitback_2)
+```
+Code is showed at question 2.
+
+
+6a. What is the total sum of squares for your model? (SST). This can be found by summing all of the squared differences from the mean for your outcome variable. Show the process you used to find this.
+```{r}
+Anova_table <- anova(lendfitback_2)
+SST = sum(Anova_table$`Sum Sq`)
+SST
+```
+Total sum of squares for your model is 29357400
+
+
+6b. What is the total sum of squares due to regression for your model? (SSR). This can be found by summing all the squared differences between the fitted values and the mean for your outcome variable. Show the process you used to find this.
+```{r}
+SSR = sum((Anova_table$`Sum Sq`)[1:(length((Anova_table$`Sum Sq`))-1)])
+SSR
+```
+Total sum of squares due to regression is 10879887
+ 
+ 
+6c. What is your SSR / SST? Where can you also see this value in the summary of your regression model?
+```{r}
+SSR/SST
+```
+SSR/SST = 0.3706012 This is shown as *Multiple R-squared Value* in the summary of regression model.
+
+
+7. Getting from a t-value to a p-value. Choose one of the predictors in your model that has a p-value of .02 or greater. What is the t-value for that predictor? Using the visualize.t() function from the visualize package, create a plot of the t-distribution that shows the distribution for that t-value and the number of degrees of freedom in your model. What percent of the curve is shaded? How does this relate to the p-value for that predictor? (If no variable in your model has a p-value of .02 or greater, that’s okay -- in that case, you can just use any variable).
+
+
+```{r}
+visualize.t(stat = c(-0.703,0.703),df = 1278801, section = "tails")
+```
+I choose *purposemajor_purchase*. This variable has a p-value of 0.482. Its t-statistic is -0.703. There is 48.20% of the curve is shaded. In fact, this is the p-value.
+
+```{r}
+pct <- pt(c(-0.703,0.703),df = 1278801)
+pct[1] + (1-pct[2])
+```
+According to definition of p value, We can check the probability that the value of this predictor less than -1.764 or greater than 1.764 as the below code. The probability is (0.2410279 + (1-0.7589721)) = 0.4820559, which is exactly the value shown in the *summary*. When |t-statistic| is larger,the shade is fewer, and then p-value is smaller. This is the relationship between t-statistic of this predictor and p-value. 
+
+
+
+8. Make up a fictional person, and assign attributes to him or her for each of the predictors in your model. What does your model predict that this person’s interest rate will be? To answer this, you can use a function in R or just explain it using the equation and some simple math.
+```{r}
+make_up <- data.frame(term=" 36 months", installment=239.21, emp_length= "9 years", home_ownership="MORTGAGE", annual_inc=95000, verification_status="Verified", purpose="home_improvement", dti=21.78, delinq_2yrs=0, inq_last_6mths=1, pub_rec=0, revol_bal=40039, revol_util=83.6, total_acc=24, delinq="Y", record="N")
+make_up
+predict(lendfitback_2,make_up)
+```
+The interest rate for this borrower is 14.1786%.
+
+
+
+9. Using the accuracy() function from the forecast package, assess the accuracy of your model against both the training set and the validation set. What do you notice about these results? Describe your findings in a couple of sentences. In this section, you should talk about the overfitting risk and also about the way your MLR model differed from your SLR model in terms of accuracy.
+```{r}
+pred_train_2 <- predict(lendfitback_2, train_data_3)
+accuracy(pred_train_2,train_data_3$int_rate)
+```
+
+```{r}
+valid_data_2 <- select(valid_data,-member_id,-loan_amnt, -funded_amnt, -funded_amnt_inv,-open_acc,-mths_since_last_delinq,-mths_since_last_record)
+valid_data_3 <- valid_data_2   
+levels(valid_data_3$home_ownership)
+valid_data_3$home_ownership <- combineLevels(valid_data_3$home_ownership,levs = c("ANY","NONE","OTHER","OWN", "RENT"), newLabel = "NotMORTGAGE")
+levels(valid_data_3$home_ownership)
+
+
+pred_valid_2 <- predict(lendfitback_2, valid_data_3)
+accuracy(pred_valid_2,valid_data$int_rate)
+```
+The multiple linear model works better in training dataset. This is because the model is fitting the training data. What's the most important is its behavior in validation dataset. It is noticeable that all the errors in validation dataset are similar with what in training dataset. 
+
+Comparing to the accuracy in linear regression model, multiple linear regression improved a lot. This is because besides the revolving line utilization, we also use other useful informations such as the purpose of borrowing, employed years, annual income... If we avoid the problem of multicollinearity, multiple linear regression might be perform better than simple linear regression model.
+
+
+
+
