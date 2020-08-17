@@ -1,5 +1,5 @@
 ---
-title: "small_dataset"
+title: "Model Prototype"
 author: "Yantong Li"
 date: "2020/2/25"
 output: html_document
