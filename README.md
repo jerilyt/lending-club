@@ -49,9 +49,9 @@ This analysis will focus on the Lending Club [Loan Data](https://www.lendingclub
 
 [LCDataDictionary.xlsx](https://github.com/jerilyt/lending-club/blob/master/LCDataDictionary.xlsx) -- Description about variable.
 
-[Dataset Address](https://github.com/jerilyt/lending-club/blob/master/Dataset Address) -- Data sourse.
+[Dataset_Address](https://github.com/jerilyt/lending-club/blob/master/Dataset_Address) -- Data sourse.
 
-[Model Prototype.Rmd](https://github.com/jerilyt/lending-club/blob/master/Model Prototype.Rmd) -- Prototype modeling in R
+[Model_Prototype.Rmd](https://github.com/jerilyt/lending-club/blob/master/Model_Prototype.Rmd) -- Prototype modeling in R
 
 
 
@@ -59,7 +59,7 @@ This analysis will focus on the Lending Club [Loan Data](https://www.lendingclub
 
 ## Official Data Description
 
-Data is soursed from [Lending Club official website](https://www.lendingclub.com/info/demand-and-credit-profile.action), 
+Data is soursed from [Lending Club](https://www.lendingclub.com/info/demand-and-credit-profile.action) official website, 
 
 LoanStats_securev1_2019Q1.csv - loan data from the first quarter in 2019. There are 115577 records in total. First number in each row is the transation id. Data for each row contain transation information such as loan amount, term, interest rate, information about borrower like employees title, employed years, purpose, non perform loan records. The descriptions about these variables is in LCDataDictionary.xlsx.
 
